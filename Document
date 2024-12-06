@@ -1,0 +1,347 @@
+Creating  a Cross-Region AWS CodePipeline
+
+
+Reference Links :
+
+1. https://docs.aws.amazon.com/codepipeline/latest/userguide/actions-create-cross-region.html
+2. https://aws.amazon.com/blogs/devops/using-aws-codepipeline-to-perform-multi-region-deployments/#:~:text=We%20will%20walk%20you%20through%20the%20following%20steps,the%20AWS%20Management%20Console.%205%20Validate%20the%20deployments
+3. https://aws.amazon.com/about-aws/whats-new/2018/11/aws-codepipeline-now-supports-cross-region-actions/
+4. https://docs.aws.amazon.com/cli/latest/reference/codepipeline/create-pipeline.html
+
+Prerequisites :
+
+
+1. AWS CLI: Ensure you have the AWS CLI installed and configured on your local machine. 
+2. IAM Role: Create an IAM role with the necessary permissions for CodePipeline, CodeBuild, and CodeDeploy.  
+
+{
+    "Statement": [
+        {
+            "Action": [
+                "iam:PassRole"
+            ],
+            "Resource": "*",
+            "Effect": "Allow",
+            "Condition": {
+                "StringEqualsIfExists": {
+                    "iam:PassedToService": [
+                        "cloudformation.amazonaws.com",
+                        "elasticbeanstalk.amazonaws.com",
+                        "ec2.amazonaws.com",
+                        "ecs-tasks.amazonaws.com"
+                    ]
+                }
+            }
+        },
+        {
+            "Action": [
+                "codecommit:CancelUploadArchive",
+                "codecommit:GetBranch",
+                "codecommit:GetCommit",
+                "codecommit:GetRepository",
+                "codecommit:GetUploadArchiveStatus",
+                "codecommit:UploadArchive"
+            ],
+            "Resource": "*",
+            "Effect": "Allow"
+        },
+        {
+            "Action": [
+                "codedeploy:CreateDeployment",
+                "codedeploy:GetApplication",
+                "codedeploy:GetApplicationRevision",
+                "codedeploy:GetDeployment",
+                "codedeploy:GetDeploymentConfig",
+                "codedeploy:RegisterApplicationRevision"
+            ],
+            "Resource": "*",
+            "Effect": "Allow"
+        },
+        {
+            "Action": [
+                "codestar-connections:UseConnection"
+            ],
+            "Resource": "*",
+            "Effect": "Allow"
+        },
+        {
+            "Action": [
+                "elasticbeanstalk:*",
+                "ec2:*",
+                "elasticloadbalancing:*",
+                "autoscaling:*",
+                "cloudwatch:*",
+                "s3:*",
+                "sns:*",
+                "cloudformation:*",
+                "rds:*",
+                "sqs:*",
+                "ecs:*"
+            ],
+            "Resource": "*",
+            "Effect": "Allow"
+        },
+        {
+            "Action": [
+                "lambda:InvokeFunction",
+                "lambda:ListFunctions"
+            ],
+            "Resource": "*",
+            "Effect": "Allow"
+        },
+        {
+            "Action": [
+                "opsworks:CreateDeployment",
+                "opsworks:DescribeApps",
+                "opsworks:DescribeCommands",
+                "opsworks:DescribeDeployments",
+                "opsworks:DescribeInstances",
+                "opsworks:DescribeStacks",
+                "opsworks:UpdateApp",
+                "opsworks:UpdateStack"
+            ],
+            "Resource": "*",
+            "Effect": "Allow"
+        },
+        {
+            "Action": [
+                "cloudformation:CreateStack",
+                "cloudformation:DeleteStack",
+                "cloudformation:DescribeStacks",
+                "cloudformation:UpdateStack",
+                "cloudformation:CreateChangeSet",
+                "cloudformation:DeleteChangeSet",
+                "cloudformation:DescribeChangeSet",
+                "cloudformation:ExecuteChangeSet",
+                "cloudformation:SetStackPolicy",
+                "cloudformation:ValidateTemplate"
+            ],
+            "Resource": "*",
+            "Effect": "Allow"
+        },
+        {
+            "Action": [
+                "codebuild:BatchGetBuilds",
+                "codebuild:StartBuild",
+                "codebuild:BatchGetBuildBatches",
+                "codebuild:StartBuildBatch"
+            ],
+            "Resource": "*",
+            "Effect": "Allow"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "devicefarm:ListProjects",
+                "devicefarm:ListDevicePools",
+                "devicefarm:GetRun",
+                "devicefarm:GetUpload",
+                "devicefarm:CreateUpload",
+                "devicefarm:ScheduleRun"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "servicecatalog:ListProvisioningArtifacts",
+                "servicecatalog:CreateProvisioningArtifact",
+                "servicecatalog:DescribeProvisioningArtifact",
+                "servicecatalog:DeleteProvisioningArtifact",
+                "servicecatalog:UpdateProduct"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "cloudformation:ValidateTemplate"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "ecr:DescribeImages"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "states:DescribeExecution",
+                "states:DescribeStateMachine",
+                "states:StartExecution"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "appconfig:StartDeployment",
+                "appconfig:StopDeployment",
+                "appconfig:GetDeployment"
+            ],
+            "Resource": "*"
+        }
+    ],
+    "Version": "2012-10-17"
+}
+
+
+
+1. The role should have the trust relationship to allow CodePipeline to assume the role.
+
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "Service": "codepipeline.amazonaws.com"
+            },
+            "Action": "sts:AssumeRole"
+        }
+    ]
+}
+
+
+
+1. S3 Buckets: Create S3 buckets in each region to store the pipeline artifacts. Ensure the buckets have versioning enabled.
+2. CodeCommit Repository: Ensure you have a CodeCommit repository set up as your source code repository.
+3. CodeBuild Project: Create a CodeBuild project that specifies the build environment, source, and other configurations.
+4. CodeDeploy Application: Create a CodeDeploy application and deployment groups in the target regions.
+    
+
+Steps to Create the Pipeline :
+
+1. Create the Pipeline Definition File
+    Create a JSON file (e.g., pipeline-definition.json) with the following content. This file defines the pipeline structure, including stages and actions.
+2. Sample Json file for creating pipeline in us-west-2 and code deploy is getting executed from us-east-1. SLAW-RC-pipeline.json
+
+{
+  "pipeline": {
+    "roleArn": "role_arn",
+    "stages": [
+      {
+        "name": "Source",
+        "actions": [
+          {
+            "inputArtifacts": [],
+            "name": "Source",
+            "actionTypeId": {
+              "category": "Source",
+              "owner": "AWS",
+              "version": "1",
+              "provider": "CodeCommit"
+            },
+            "outputArtifacts": [
+              {
+                "name": "SourceArtifact"
+              }
+            ],
+            "configuration": {
+              "RepositoryName": "RepositoryName",
+              "BranchName": "BranchName",
+              "PollForSourceChanges": "false"
+            },
+            "runOrder": 1,
+            "region": "us-west-2"
+          }
+        ]
+      },
+      {
+        "name": "Build",
+        "actions": [
+          {
+            "inputArtifacts": [
+              {
+                "name": "SourceArtifact"
+              }
+            ],
+            "name": "Build",
+            "actionTypeId": {
+              "category": "Build",
+              "owner": "AWS",
+              "version": "1",
+              "provider": "CodeBuild"
+            },
+            "outputArtifacts": [
+              {
+                "name": "Build_Artifact_Name_1"
+              },
+              {
+                "name": "Build_Artifact_Name_2"
+              },
+              {
+                "name": "Build_Artifact_Name_3"
+              },
+              {
+                "name": "Build_Artifact_Name_4"
+              },
+              {
+                "name": "Build_Artifact_Name_5"
+              }
+            ],
+            "configuration": {
+              "ProjectName": "CodeBuild_ProjectName"
+            },
+            "runOrder": 1,
+            "region": "us-west-2"
+          }
+        ]
+      },
+      {
+        "name": "Deploy-To-Dev",
+        "actions": [
+          {
+            "inputArtifacts": [
+              {
+                "name": "Build_Artifact_Name_1"
+              }
+            ],
+            "name": "Deploy-To-Dev",
+            "actionTypeId": {
+              "category": "Deploy",
+              "owner": "AWS",
+              "version": "1",
+              "provider": "CodeDeploy"
+            },
+            "outputArtifacts": [],
+            "configuration": {
+              "ApplicationName": "CodeDeploy_ApplicationName",
+              "DeploymentGroupName": "CodeDeploy_DeploymentGroupName"
+            },
+            "runOrder": 1,
+            "region": "us-east-1"
+          }
+        ]
+      }
+    ],
+    "artifactStores": {
+      "us-west-2": {
+        "type": "S3",
+        "location": "S3BucketName_in_us-west-2"
+      },
+      "us-east-1": {
+        "type": "S3",
+        "location": "S3BucketName_in_us-east-1"
+      }
+    },
+    "name": "CodePipeline_Name",
+    "version": 1
+  }
+}
+
+Replace the placeholders in above json file with actual values relevant to your application.
+In the above CodePipeline json file regions specified for
+CodePipeline : us-west-2
+CodeCommit : us-west-2
+CodeBuild : us-west-2
+CodeDeploy : us-east-1
+
+
+1. Once you have the json file ready, you can create a pipeline using aws cli command from your local machine.
+
+aws codepipeline create-pipeline --cli-input-json file://pipeline-definition.json
+
